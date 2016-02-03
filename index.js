@@ -1,24 +1,7 @@
-var retrieveArguments = require('retrieve-arguments'), minimist = require('minimist'),
-  stringify = require('node-stringify'), debug = require('debug')('gulp-param');
+var retrieveArguments = require('retrieve-arguments'), minimist = require('minimist'), R = require('ramda');
 
-module.exports = function (gulp, processArgv, callbackFunctionName) {
-  var parsedCmdArguments = minimist(processArgv);
-  var prepareArgumentsArray = function (functionArguments, originalCallbackFunction) {
-    var arguments = [];
-    debug('prepare argument base on function arguments (%s) and parsed commandline (%s)',
-      functionArguments, stringify(parsedCmdArguments));
-
-    for (var i = 0; i < functionArguments.length; i++) {
-      var functionArgument = functionArguments[i], value = parsedCmdArguments[functionArgument];
-      if (value) {
-        arguments.push(value);
-      } else if (functionArgument === (callbackFunctionName || "callback")) {
-        arguments.push(originalCallbackFunction);
-      } else {arguments.push(undefined);}
-    }
-    return arguments;
-  };
-
+module.exports = function (gulp, processArgv, callbackName) {
+  var cmdArgs = minimist(processArgv);
   var wrappedTask = function (taskName, taskDependencies, taskDefinition) {
     if (!taskDefinition && typeof taskDependencies === 'function') {
       taskDefinition = taskDependencies;
@@ -27,13 +10,11 @@ module.exports = function (gulp, processArgv, callbackFunctionName) {
     taskDefinition = taskDefinition || function () {};
 
     var wrappedTaskFunction = function (originalCallbackFunction) {
-      return taskDefinition.apply(gulp, prepareArgumentsArray(retrieveArguments(taskDefinition), originalCallbackFunction));
+      var cmdArgsMap = R.merge(R.objOf(callbackName || "callback")(originalCallbackFunction) , cmdArgs);
+      var mapFunctionParameters = R.map(function (fnArgument) { return cmdArgsMap[fnArgument];});
+      return taskDefinition.apply(gulp, mapFunctionParameters(retrieveArguments(taskDefinition)));
     };
     return gulp.task.call(gulp, taskName, taskDependencies || [], wrappedTaskFunction);
   };
-
-  var wrappedGulp = {task: wrappedTask};
-  wrappedGulp.prototype = gulp;
-  wrappedGulp.constructor = gulp.constructor;
-  return wrappedGulp;
+  return R.merge(R.clone(gulp),{task: wrappedTask});
 };
